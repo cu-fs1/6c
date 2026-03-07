@@ -4,13 +4,12 @@ import { StatusCodes } from "http-status-codes";
 import createError from "http-errors";
 
 export const registerUser = async (req, res) => {
-  const { fullName, email, password, accountNumber } = req.body;
+  const { fullName, email, password } = req.body;
 
   const user = await User.create({
     fullName,
     email,
     password,
-    accountNumber,
   });
 
   return res.status(StatusCodes.CREATED).json({
@@ -19,7 +18,6 @@ export const registerUser = async (req, res) => {
       id: user._id,
       fullName: user.fullName,
       email: user.email,
-      accountNumber: user.accountNumber,
       createdAt: user.createdAt,
     },
   });
@@ -44,7 +42,6 @@ export const loginUser = async (req, res) => {
       id: user._id,
       fullName: user.fullName,
       email: user.email,
-      accountNumber: user.accountNumber,
     },
   });
 };
