@@ -1,4 +1,5 @@
 import User from "../models/user.model.js";
+import Account from "../models/account.model.js";
 import { generateToken } from "../utils/jwt.js";
 import { StatusCodes } from "http-status-codes";
 import createError from "http-errors";
@@ -12,12 +13,17 @@ export const registerUser = async (req, res) => {
     password,
   });
 
+  const account = await Account.create({
+    user: user._id,
+  });
+
   return res.status(StatusCodes.CREATED).json({
     message: "User registered successfully",
     data: {
       id: user._id,
       fullName: user.fullName,
       email: user.email,
+      accountId: account._id,
       createdAt: user.createdAt,
     },
   });
@@ -53,8 +59,13 @@ export const getCurrentUser = async (req, res) => {
     throw createError(StatusCodes.NOT_FOUND, "User not found");
   }
 
+  const account = await Account.findOne({ user: user._id }).select("balance");
+
   return res.status(StatusCodes.OK).json({
     message: "User fetched successfully",
-    data: user,
+    data: {
+      ...user.toObject(),
+      account,
+    },
   });
 };

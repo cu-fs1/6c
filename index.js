@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import connectDB from "./config/db.js";
 import loggerMiddleware from "./middleware/logger.middleware.js";
 import authRoutes from "./routes/auth.routes.js";
+import transactionRoutes from "./routes/transaction.routes.js";
 
 dotenv.config();
 
@@ -20,6 +21,7 @@ app.use(loggerMiddleware);
 
 // Routes
 app.use("/users", authRoutes);
+app.use("/banking", transactionRoutes);
 
 // Base Route
 app.get("/", (req, res) => {

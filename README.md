@@ -29,3 +29,19 @@ pnpm dev
 - `POST /users/register` → Register a user
 - `POST /users/login` → Login and receive JWT token
 - `GET /users/me` → Protected route (requires `Authorization: Bearer <token>`)
+
+Each user is linked to a dedicated account (`Account` model). The account is created automatically during registration.
+Transactions are stored in a separate `Transaction` model and link both sides with `fromAccount` and `toAccount`.
+
+## Banking APIs
+
+All banking routes require `Authorization: Bearer <token>`.
+
+- `GET /banking/balance` → Get current user account balance
+- `GET /banking/transactions` → Get current user transaction history
+- `POST /banking/deposit` → Deposit money
+	- Body: `{ "amount": 100, "description": "Initial deposit" }`
+- `POST /banking/withdraw` → Withdraw money
+	- Body: `{ "amount": 40, "description": "ATM cash" }`
+- `POST /banking/transfer` → Transfer money to another user by email
+	- Body: `{ "toEmail": "alice@example.com", "amount": 25, "description": "Dinner split" }`
