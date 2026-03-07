@@ -1,17 +1,43 @@
 import createError from "http-errors";
 import { StatusCodes } from "http-status-codes";
+import mongoose from "mongoose";
 import User from "../models/user.model.js";
 import Account from "../models/account.model.js";
 import Transaction from "../models/transaction.model.js";
 
-const getOrCreateAccount = async (userId) => {
-  let account = await Account.findOne({ user: userId });
+const getOrCreateAccount = async (userId, session = null) => {
+  const findAccount = () => {
+    const query = Account.findOne({ user: userId });
+    if (session) {
+      query.session(session);
+    }
+    return query;
+  };
+
+  let account = await findAccount();
 
   if (account) {
     return account;
   }
 
-  account = await Account.create({ user: userId });
+  try {
+    account = new Account({ user: userId });
+    await account.save({ session });
+  } catch (error) {
+    // Handle concurrent account creation attempts for the same user.
+    if (error?.code === 11000) {
+      account = await findAccount();
+    } else {
+      throw error;
+    }
+  }
+
+  if (!account) {
+    throw createError(
+      StatusCodes.INTERNAL_SERVER_ERROR,
+      "Failed to resolve account",
+    );
+  }
 
   return account;
 };
@@ -47,7 +73,6 @@ export const getTransactions = async (req, res) => {
 export const deposit = async (req, res) => {
   const { description = "" } = req.body;
   const amount = req.validatedAmount;
-
   const account = await getOrCreateAccount(req.user.userId);
   const updatedAccount = await Account.findByIdAndUpdate(
     account._id,
@@ -75,7 +100,6 @@ export const deposit = async (req, res) => {
 export const withdraw = async (req, res) => {
   const { description = "" } = req.body;
   const amount = req.validatedAmount;
-
   const account = await getOrCreateAccount(req.user.userId);
   const updatedAccount = await Account.findOneAndUpdate(
     { _id: account._id, balance: { $gte: amount } },
@@ -128,36 +152,56 @@ export const transfer = async (req, res) => {
     throw createError(StatusCodes.BAD_REQUEST, "Cannot transfer to same account");
   }
 
-  const senderAccount = await getOrCreateAccount(sender._id);
-  const receiverAccount = await getOrCreateAccount(receiver._id);
-  const debitedSenderAccount = await Account.findOneAndUpdate(
-    { _id: senderAccount._id, balance: { $gte: amount } },
-    { $inc: { balance: -amount } },
-    { new: true },
-  );
+  let responseBalance;
 
-  if (!debitedSenderAccount) {
-    throw createError(StatusCodes.BAD_REQUEST, "Insufficient funds");
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      const senderAccount = await getOrCreateAccount(sender._id, session);
+      const receiverAccount = await getOrCreateAccount(receiver._id, session);
+      const debitedSenderAccount = await Account.findOneAndUpdate(
+        { _id: senderAccount._id, balance: { $gte: amount } },
+        { $inc: { balance: -amount } },
+        { new: true, session },
+      );
+
+      if (!debitedSenderAccount) {
+        throw createError(StatusCodes.BAD_REQUEST, "Insufficient funds");
+      }
+
+      await Account.findByIdAndUpdate(
+        receiverAccount._id,
+        {
+          $inc: { balance: amount },
+        },
+        { session },
+      );
+
+      await Transaction.create(
+        [
+          {
+            type: "transfer",
+            amount,
+            description,
+            fromAccount: senderAccount._id,
+            toAccount: receiverAccount._id,
+          },
+        ],
+        { session },
+      );
+
+      responseBalance = debitedSenderAccount.balance;
+    });
+  } finally {
+    await session.endSession();
   }
-
-  await Account.findByIdAndUpdate(receiverAccount._id, {
-    $inc: { balance: amount },
-  });
-
-  await Transaction.create({
-    type: "transfer",
-    amount,
-    description,
-    fromAccount: senderAccount._id,
-    toAccount: receiverAccount._id,
-  });
 
   return res.status(StatusCodes.OK).json({
     message: "Transfer successful",
     data: {
       toEmail: receiver.email,
       amount,
-      balance: debitedSenderAccount.balance,
+      balance: responseBalance,
     },
   });
 };
