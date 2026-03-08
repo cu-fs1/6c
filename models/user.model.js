@@ -1,7 +1,5 @@
 import mongoose from "mongoose";
-import bcrypt from "bcryptjs";
-
-const PASSWORD_SALT_ROUNDS = 10;
+import argon2 from "argon2";
 
 const userSchema = new mongoose.Schema(
   {
@@ -32,11 +30,11 @@ userSchema.pre("save", async function () {
     return;
   }
 
-  this.password = await bcrypt.hash(this.password, PASSWORD_SALT_ROUNDS);
+  this.password = await argon2.hash(this.password);
 });
 
 userSchema.methods.comparePassword = function (candidatePassword) {
-  return bcrypt.compare(candidatePassword, this.password);
+  return argon2.verify(this.password, candidatePassword);
 };
 
 const User = mongoose.model("User", userSchema);
