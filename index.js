@@ -3,6 +3,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import connectDB from "./config/db.js";
 import loggerMiddleware from "./middleware/logger.middleware.js";
+import errorMiddleware from "./middleware/error.middleware.js";
 import authRoutes from "./routes/auth.routes.js";
 import transactionRoutes from "./routes/transaction.routes.js";
 
@@ -27,6 +28,9 @@ app.use("/banking", transactionRoutes);
 app.get("/", (req, res) => {
   res.send("Welcome to the Banking API!");
 });
+
+// Error Handling Middleware (must be last)
+app.use(errorMiddleware);
 
 // Start Server
 app.listen(PORT, () => {
