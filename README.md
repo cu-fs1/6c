@@ -30,8 +30,8 @@ pnpm dev
 - `POST /users/login` → Login and receive JWT token
 - `GET /users/me` → Protected route (requires `Authorization: Bearer <token>`)
 
-Each user is linked to a dedicated account (`Account` model). The account is created automatically during registration.
-Transactions are stored in a separate `Transaction` model and link both sides with `fromAccount` and `toAccount`.
+Each user has a `balance` field embedded directly in the `User` model — there is no separate `Account` model.
+Transactions are stored in a `Transaction` model whose `fromAccount` and `toAccount` fields reference `User` documents.
 
 ## Banking APIs
 
