@@ -23,13 +23,13 @@ const transactionSchema = new mongoose.Schema(
     },
     fromAccount: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Account",
+      ref: "User",
       default: null,
       index: true,
     },
     toAccount: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Account",
+      ref: "User",
       default: null,
       index: true,
     },

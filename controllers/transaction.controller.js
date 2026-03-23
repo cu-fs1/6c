@@ -2,65 +2,26 @@ import createError from "http-errors";
 import { StatusCodes } from "http-status-codes";
 import mongoose from "mongoose";
 import User from "../models/user.model.js";
-import Account from "../models/account.model.js";
 import Transaction from "../models/transaction.model.js";
 
-const getOrCreateAccount = async (userId, session = null) => {
-  const findAccount = () => {
-    const query = Account.findOne({ user: userId });
-    if (session) {
-      query.session(session);
-    }
-    return query;
-  };
-
-  let account = await findAccount();
-
-  if (account) {
-    return account;
-  }
-
-  try {
-    account = new Account({ user: userId });
-    await account.save({ session });
-  } catch (error) {
-    // Handle concurrent account creation attempts for the same user.
-    if (error?.code === 11000) {
-      account = await findAccount();
-    } else {
-      throw error;
-    }
-  }
-
-  if (!account) {
-    throw createError(
-      StatusCodes.INTERNAL_SERVER_ERROR,
-      "Failed to resolve account",
-    );
-  }
-
-  return account;
-};
-
 export const getBalance = async (req, res) => {
-  const account = await getOrCreateAccount(req.user.userId);
+  const user = await User.findById(req.user.userId);
 
   return res.status(StatusCodes.OK).json({
     message: "Balance fetched successfully",
     data: {
-      balance: account.balance,
+      balance: user.balance,
     },
   });
 };
 
 export const getTransactions = async (req, res) => {
-  const account = await getOrCreateAccount(req.user.userId);
   const transactions = await Transaction.find({
-    $or: [{ fromAccount: account._id }, { toAccount: account._id }],
+    $or: [{ fromAccount: req.user.userId }, { toAccount: req.user.userId }],
   })
     .sort({ createdAt: -1 })
-    .populate("fromAccount", "user")
-    .populate("toAccount", "user");
+    .populate("fromAccount", "fullName email")
+    .populate("toAccount", "fullName email");
 
   return res.status(StatusCodes.OK).json({
     message: "Transactions fetched successfully",
@@ -73,9 +34,8 @@ export const getTransactions = async (req, res) => {
 export const deposit = async (req, res) => {
   const { description = "" } = req.body;
   const amount = req.validatedAmount;
-  const account = await getOrCreateAccount(req.user.userId);
-  const updatedAccount = await Account.findByIdAndUpdate(
-    account._id,
+  const updatedUser = await User.findByIdAndUpdate(
+    req.user.userId,
     { $inc: { balance: amount } },
     { new: true },
   );
@@ -85,13 +45,13 @@ export const deposit = async (req, res) => {
     amount,
     description,
     fromAccount: null,
-    toAccount: account._id,
+    toAccount: req.user.userId,
   });
 
   return res.status(StatusCodes.OK).json({
     message: "Deposit successful",
     data: {
-      balance: updatedAccount.balance,
+      balance: updatedUser.balance,
       amount,
     },
   });
@@ -100,14 +60,13 @@ export const deposit = async (req, res) => {
 export const withdraw = async (req, res) => {
   const { description = "" } = req.body;
   const amount = req.validatedAmount;
-  const account = await getOrCreateAccount(req.user.userId);
-  const updatedAccount = await Account.findOneAndUpdate(
-    { _id: account._id, balance: { $gte: amount } },
+  const updatedUser = await User.findOneAndUpdate(
+    { _id: req.user.userId, balance: { $gte: amount } },
     { $inc: { balance: -amount } },
     { new: true },
   );
 
-  if (!updatedAccount) {
+  if (!updatedUser) {
     throw createError(StatusCodes.BAD_REQUEST, "Insufficient funds");
   }
 
@@ -115,14 +74,14 @@ export const withdraw = async (req, res) => {
     type: "withdrawal",
     amount,
     description,
-    fromAccount: account._id,
+    fromAccount: req.user.userId,
     toAccount: null,
   });
 
   return res.status(StatusCodes.OK).json({
     message: "Withdrawal successful",
     data: {
-      balance: updatedAccount.balance,
+      balance: updatedUser.balance,
       amount,
     },
   });
@@ -136,20 +95,17 @@ export const transfer = async (req, res) => {
     throw createError(StatusCodes.BAD_REQUEST, "Recipient email is required");
   }
 
-  const sender = await User.findById(req.user.userId);
-
-  if (!sender) {
-    throw createError(StatusCodes.NOT_FOUND, "Sender not found");
-  }
-
   const receiver = await User.findOne({ email: toEmail.toLowerCase().trim() });
 
   if (!receiver) {
     throw createError(StatusCodes.NOT_FOUND, "Recipient not found");
   }
 
-  if (sender._id.toString() === receiver._id.toString()) {
-    throw createError(StatusCodes.BAD_REQUEST, "Cannot transfer to same account");
+  if (req.user.userId === receiver._id.toString()) {
+    throw createError(
+      StatusCodes.BAD_REQUEST,
+      "Cannot transfer to same account",
+    );
   }
 
   let responseBalance;
@@ -157,23 +113,19 @@ export const transfer = async (req, res) => {
   const session = await mongoose.startSession();
   try {
     await session.withTransaction(async () => {
-      const senderAccount = await getOrCreateAccount(sender._id, session);
-      const receiverAccount = await getOrCreateAccount(receiver._id, session);
-      const debitedSenderAccount = await Account.findOneAndUpdate(
-        { _id: senderAccount._id, balance: { $gte: amount } },
+      const debitedSender = await User.findOneAndUpdate(
+        { _id: req.user.userId, balance: { $gte: amount } },
         { $inc: { balance: -amount } },
         { new: true, session },
       );
 
-      if (!debitedSenderAccount) {
+      if (!debitedSender) {
         throw createError(StatusCodes.BAD_REQUEST, "Insufficient funds");
       }
 
-      await Account.findByIdAndUpdate(
-        receiverAccount._id,
-        {
-          $inc: { balance: amount },
-        },
+      await User.findByIdAndUpdate(
+        receiver._id,
+        { $inc: { balance: amount } },
         { session },
       );
 
@@ -183,14 +135,14 @@ export const transfer = async (req, res) => {
             type: "transfer",
             amount,
             description,
-            fromAccount: senderAccount._id,
-            toAccount: receiverAccount._id,
+            fromAccount: req.user.userId,
+            toAccount: receiver._id,
           },
         ],
         { session },
       );
 
-      responseBalance = debitedSenderAccount.balance;
+      responseBalance = debitedSender.balance;
     });
   } finally {
     await session.endSession();
