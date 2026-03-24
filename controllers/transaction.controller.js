@@ -37,7 +37,7 @@ export const deposit = async (req, res) => {
   const updatedUser = await User.findByIdAndUpdate(
     req.user.userId,
     { $inc: { balance: amount } },
-    { new: true },
+    { returnDocument: "after" },
   );
 
   await Transaction.create({
@@ -63,7 +63,7 @@ export const withdraw = async (req, res) => {
   const updatedUser = await User.findOneAndUpdate(
     { _id: req.user.userId, balance: { $gte: amount } },
     { $inc: { balance: -amount } },
-    { new: true },
+    { returnDocument: "after" },
   );
 
   if (!updatedUser) {
@@ -116,7 +116,7 @@ export const transfer = async (req, res) => {
       const debitedSender = await User.findOneAndUpdate(
         { _id: req.user.userId, balance: { $gte: amount } },
         { $inc: { balance: -amount } },
-        { new: true, session },
+        { returnDocument: "after", session },
       );
 
       if (!debitedSender) {
